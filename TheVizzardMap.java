@@ -1,13 +1,13 @@
-import javax.swing.*;
 import java.awt.*;
+import javax.swing.*;
 import java.io.*;
 import java.util.*;
 
 /**
  * 🗺️ TheVizzardMap
  * Displays election results as colored county plots on a U.S. map background.
- * Green = Candidate A (Bugs Bunny)
- * Magenta = Candidate B (Road Runner)
+ * Green = Candidate A
+ * Magenta = Candidate B
  */
 public class TheVizzardMap extends JPanel {
 
@@ -24,7 +24,7 @@ public class TheVizzardMap extends JPanel {
 
     private final java.util.List<County> counties = new ArrayList<>();
     private final Image mapImage;
-    private String focusState = null;
+    private final String focusState;
 
     public TheVizzardMap(String csvPath, String mapPath, String focusState) throws IOException {
         this.focusState = (focusState != null && !focusState.isEmpty()) ? focusState.toUpperCase() : null;
@@ -32,32 +32,51 @@ public class TheVizzardMap extends JPanel {
         loadCounties(csvPath);
     }
 
-    /** Load county data from CSV */
+    /** Load county data from CSV. Handles flexible header names. */
     private void loadCounties(String csvPath) throws IOException {
-        try (BufferedReader br = new BufferedReader(new FileReader(csvPath))) {
+        File file = new File(csvPath);
+        if (!file.exists()) {
+            System.out.println("❌ Counties CSV not found: " + csvPath);
+            return;
+        }
+
+        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
             String headerLine = br.readLine();
             if (headerLine == null) return;
-            String[] headers = headerLine.split(",");
 
-            int latIdx = Arrays.asList(headers).indexOf("lat");
-            int lonIdx = Arrays.asList(headers).indexOf("lng");
-            int bbIdx = Arrays.asList(headers).indexOf("BB Votes");
-            int rrIdx = Arrays.asList(headers).indexOf("RR Votes");
-            int stateIdx = Arrays.asList(headers).indexOf("state_id");
+            String[] headers = headerLine.trim().split(",");
+            Map<String, Integer> idx = new HashMap<>();
+            for (int i = 0; i < headers.length; i++) {
+                idx.put(headers[i].trim().toLowerCase(), i);
+            }
+
+            // Support multiple possible header styles
+            int latIdx   = idx.getOrDefault("lat", idx.getOrDefault("latitude", -1));
+            int lonIdx   = idx.getOrDefault("lng", idx.getOrDefault("longitude", -1));
+            int stateIdx = idx.getOrDefault("state_id", idx.getOrDefault("state", -1));
+            int aIdx     = idx.getOrDefault("a_votes", idx.getOrDefault("bb votes", -1));
+            int bIdx     = idx.getOrDefault("b_votes", idx.getOrDefault("rr votes", -1));
+
+            if (latIdx < 0 || lonIdx < 0 || aIdx < 0 || bIdx < 0 || stateIdx < 0) {
+                System.out.println("⚠️  Header mismatch: expected lat,lng,state_id,A_Votes,B_Votes");
+                System.out.println("Found headers: " + Arrays.toString(headers));
+                return;
+            }
 
             String line;
             while ((line = br.readLine()) != null) {
                 String[] parts = line.split(",");
                 try {
-                    if (parts.length > Math.max(latIdx, lonIdx)) {
-                        double lat = Double.parseDouble(parts[latIdx]);
-                        double lon = Double.parseDouble(parts[lonIdx]);
-                        int bb = Integer.parseInt(parts[bbIdx]);
-                        int rr = Integer.parseInt(parts[rrIdx]);
-                        String state = parts[stateIdx].trim();
-                        String winner = (bb > rr) ? "A" : "B";
-                        counties.add(new County(state, lat, lon, winner));
-                    }
+                    if (parts.length <= Math.max(stateIdx,
+                            Math.max(aIdx, Math.max(bIdx, Math.max(latIdx, lonIdx))))) continue;
+
+                    double lat = Double.parseDouble(parts[latIdx]);
+                    double lon = Double.parseDouble(parts[lonIdx]);
+                    int aVotes = Integer.parseInt(parts[aIdx]);
+                    int bVotes = Integer.parseInt(parts[bIdx]);
+                    String state = parts[stateIdx].trim().toUpperCase();
+                    String winner = (aVotes > bVotes) ? "A" : "B";
+                    counties.add(new County(state, lat, lon, winner));
                 } catch (Exception ignored) {}
             }
         }
@@ -66,10 +85,10 @@ public class TheVizzardMap extends JPanel {
 
     /** Convert lat/lon to (x, y) for map plotting */
     private Point project(double lat, double lon, int width, int height) {
-        // Adjusted scaling for USA map alignment
+        // Simple equirectangular-style projection tuned for US map alignment
         double x = (lon + 125) * (width / 58.0);
         double y = (50 - lat) * (height / 30.0);
-        return new Point((int)x, (int)y);
+        return new Point((int) x, (int) y);
     }
 
     @Override
@@ -78,18 +97,20 @@ public class TheVizzardMap extends JPanel {
         g.drawImage(mapImage, 0, 0, getWidth(), getHeight(), this);
 
         for (County c : counties) {
-            if (focusState != null && !focusState.equals(c.stateId)) continue; // filter by state if needed
+            if (focusState != null && !focusState.equals(c.stateId)) continue;
             Point p = project(c.lat, c.lon, getWidth(), getHeight());
-            g.setColor(c.winner.equals("A") ? Color.GREEN : Color.MAGENTA);
+            g.setColor("A".equals(c.winner) ? Color.GREEN : Color.MAGENTA);
             g.fillOval(p.x, p.y, 5, 5);
         }
 
         g.setColor(Color.BLACK);
         g.setFont(new Font("SansSerif", Font.BOLD, 14));
         String label = (focusState == null)
-                ? "National County Results — Bugs Bunny (Green) vs Road Runner (Magenta)"
-                : focusState + " County Results — Bugs Bunny (Green) vs Road Runner (Magenta)";
+                ? "National County Results — " + TheVizzard.getCandidateA() + " (Green) vs " + TheVizzard.getCandidateB() + " (Magenta)"
+                : focusState + " County Results — " + TheVizzard.getCandidateA() + " (Green) vs " + TheVizzard.getCandidateB() + " (Magenta)";
         g.drawString(label, 20, 25);
+        g.drawString(TheVizzard.getCandidateA() + " Counties (Green)", 20, 45);
+        g.drawString(TheVizzard.getCandidateB() + " Counties (Magenta)", 20, 65);
     }
 
     /** Display full USA map */
@@ -102,19 +123,24 @@ public class TheVizzardMap extends JPanel {
         displayMap(stateCode);
     }
 
-    /** Core display logic */
+    /** Core display logic (thread-safe Swing) */
     private static void displayMap(String stateCode) {
-        try {
-            JFrame frame = new JFrame("The Vizzard — " +
-                    (stateCode == null ? "National Map" : stateCode + " Map"));
-            TheVizzardMap panel = new TheVizzardMap("data/Voting-Counties.csv",
-                    "data/us_map.png", stateCode);
-            frame.add(panel);
-            frame.setSize(900, 600);
-            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-            frame.setVisible(true);
-        } catch (IOException e) {
-            System.out.println("❌ Failed to load map: " + e.getMessage());
-        }
+        SwingUtilities.invokeLater(() -> {
+            try {
+                JFrame frame = new JFrame("The Vizzard — " +
+                        (stateCode == null ? "National Map" : stateCode.toUpperCase() + " Map"));
+                TheVizzardMap panel = new TheVizzardMap(
+                        "data/Voting-Counties.csv",
+                        "data/us_map.png",
+                        stateCode
+                );
+                frame.add(panel);
+                frame.setSize(900, 600);
+                frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+                frame.setVisible(true);
+            } catch (IOException e) {
+                System.out.println("❌ Failed to load map: " + e.getMessage());
+            }
+        });
     }
 }

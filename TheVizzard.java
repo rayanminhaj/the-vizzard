@@ -22,12 +22,27 @@ import java.util.Map;
 public class TheVizzard {
 
     // ----------------------------- DATA -----------------------------
-    private static Map<String, Integer> electoralVotes = new HashMap<>();
-    private static Map<String, Map<String, Integer>> voteResults = new HashMap<>();
+    private static String candidateA = "Candidate A";
+    private static String candidateB = "Candidate B";
+
+    public static String getCandidateA() { return candidateA; }
+    public static String getCandidateB() { return candidateB; }
+
+    private static final Map<String, Integer> electoralVotes = new HashMap<>();
+    private static final Map<String, Map<String, Integer>> voteResults = new HashMap<>();
 
     // ----------------------------- MAIN -----------------------------
     public static void main(String[] args) {
-        System.out.println("========== 🗳️  The Vizzard — Election Analyzer ==========\n");
+        System.out.println("==========  The Vizzard — Election Analyzer ==========\n");
+
+        Scanner in = new Scanner(System.in);
+        System.out.print("Enter name for Candidate A: ");
+        candidateA = in.nextLine().trim();
+        System.out.print("Enter name for Candidate B: ");
+        candidateB = in.nextLine().trim();
+
+        System.out.println("\nWelcome to The Vizzard Election Analyzer!");
+        System.out.println("Comparing " + candidateA + " vs " + candidateB + "...\n");
 
         try {
             // Load all files
@@ -44,8 +59,7 @@ public class TheVizzard {
             printPopularVoteResults(popularTotals);
             printElectoralSummary(electoralTotals, popularTotals);
 
-            // Display one state
-            Scanner in = new Scanner(System.in);
+            // One-state summary
             System.out.print("\nEnter State ID for summary: ");
             String state = in.nextLine().trim().toUpperCase();
             displayStateSummary(state);
@@ -53,10 +67,11 @@ public class TheVizzard {
             // Simulate partial reporting
             simulatePartialResults(in);
 
-            // Draw chart
+            // Simple bar chart
             showResultChart(popularTotals, electoralTotals);
 
             System.out.println("\n✅ Analysis complete. Visualization displayed.");
+
             // Step 1: National map
             TheVizzardMap.displayNationalMap();
 
@@ -70,6 +85,8 @@ public class TheVizzard {
         } catch (FileNotFoundException e) {
             System.out.println("❌ Error: One or more files not found in /data/ directory.");
         } catch (Exception e) {
+            // Print full stack once; comment back to message-only if you prefer
+            e.printStackTrace();
             System.out.println("⚠️  Unexpected error: " + e.getMessage());
         }
     }
@@ -77,87 +94,94 @@ public class TheVizzard {
     // ----------------------------- LOADERS -----------------------------
     /** Reads electoral votes from CSV. */
     private static void loadElectoralVotesCSV(String filename) throws IOException {
-    File file = new File(filename);
-    if (!file.exists()) throw new FileNotFoundException(filename);
+        File file = new File(filename);
+        if (!file.exists()) throw new FileNotFoundException(filename);
 
-    try (BufferedReader br = new BufferedReader(new FileReader(file))) {
-        List<String> lines = new ArrayList<>();
-        String line;
-        while ((line = br.readLine()) != null) {
-            lines.add(line);
-        }
+        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+            List<String> lines = new ArrayList<>();
+            String line;
+            while ((line = br.readLine()) != null) {
+                lines.add(line);
+            }
 
-        for (int i = 2; i < lines.size(); i++) {
-            String[] parts = lines.get(i).split(",");
-            if (parts.length >= 15) {
-                String stateCode = parts[1].trim();
-                String evStr = parts[14].trim().replaceAll("[^0-9.]", ""); // strip text like "votes"
-                if (!evStr.isEmpty()) {
-                    try {
-                        int ev = (int) Double.parseDouble(evStr);
-                        electoralVotes.put(stateCode, ev);
-                    } catch (NumberFormatException e) {
-                        System.out.println("Skipping invalid EV for " + stateCode + ": " + evStr);
+            // Skip first two header-ish lines per your original file
+            for (int i = 2; i < lines.size(); i++) {
+                String[] parts = lines.get(i).split(",");
+                if (parts.length >= 15) {
+                    String stateCode = parts[1].trim();
+                    String evStr = parts[14].trim().replaceAll("[^0-9.]", ""); // strip text like "votes"
+                    if (!evStr.isEmpty()) {
+                        try {
+                            int ev = (int) Double.parseDouble(evStr);
+                            electoralVotes.put(stateCode, ev);
+                        } catch (NumberFormatException e) {
+                            System.out.println("Skipping invalid EV for " + stateCode + ": " + evStr);
+                        }
                     }
                 }
             }
         }
+        System.out.println("Loaded " + electoralVotes.size() + " state electoral entries.");
     }
-    System.out.println("Loaded " + electoralVotes.size() + " state electoral entries.");
-}
 
-    /** Reads vote results from Excel (Apache POI). */
+    /** Reads vote results from Excel (Apache POI). Expect columns:
+     *  [*, stateId at col 1, *, A_Votes at col 3, B_Votes at col 4, ...]
+     */
     private static void loadVoteResultsXLSX(String filename) throws IOException {
         File file = new File(filename);
         if (!file.exists()) throw new FileNotFoundException(filename);
 
         try (FileInputStream fis = new FileInputStream(file);
-             Workbook wb = new XSSFWorkbook(fis)) 
-             {
+             Workbook wb = new XSSFWorkbook(fis)) {
+
             Sheet sheet = wb.getSheet("Results");
-            for (int r = 2; r <= sheet.getLastRowNum(); r++) {
+            if (sheet == null) {
+                // Fallback: first sheet if "Results" isn't found
+                sheet = wb.getNumberOfSheets() > 0 ? wb.getSheetAt(0) : null;
+            }
+            if (sheet == null) throw new IllegalStateException("No sheet found in " + filename);
+
+            int lastRow = sheet.getLastRowNum();
+            for (int r = 2; r <= lastRow; r++) {           // start at row 2 (0-based) per your file
                 Row row = sheet.getRow(r);
                 if (row == null) continue;
 
-                Cell stateCell = row.getCell(1);
-                Cell rrCell = row.getCell(3);
-                Cell bbCell = row.getCell(4);
+                Cell stateCell = row.getCell(1);            // state ID
+                Cell aCell     = row.getCell(3);            // A_Votes
+                Cell bCell     = row.getCell(4);            // B_Votes
+                if (stateCell == null || aCell == null || bCell == null) continue;
 
-                if (stateCell == null || rrCell == null || bbCell == null) continue;
-
-                String stateId = stateCell.getStringCellValue();
-                int rrVotes = 0;
-                int bbVotes = 0;
-
+                String stateId = null;
                 try {
-                    if (rrCell.getCellType() == CellType.NUMERIC)
-                        rrVotes = (int) rrCell.getNumericCellValue();
-                    else if (rrCell.getCellType() == CellType.STRING)
-                        rrVotes = Integer.parseInt(rrCell.getStringCellValue().trim());
-                    } 
-                    catch (Exception e) 
-                    {
-                        rrVotes = 0;
+                    stateId = stateCell.getStringCellValue();
+                } catch (Exception ignore) {
+                    // If it's numeric for some reason, try converting
+                    if (stateCell.getCellType() == CellType.NUMERIC) {
+                        stateId = String.valueOf((int) stateCell.getNumericCellValue());
                     }
+                }
+                if (stateId == null) continue;
+                stateId = stateId.trim();
 
-                try {
-                    if (bbCell.getCellType() == CellType.NUMERIC)
-                        bbVotes = (int) bbCell.getNumericCellValue();
-                    else if (bbCell.getCellType() == CellType.STRING)
-                        bbVotes = Integer.parseInt(bbCell.getStringCellValue().trim());
-                    } 
-                    catch (Exception e) 
-                    {
-                        bbVotes = 0;
-                    }
-                    
+                int aVotes = safeInt(aCell);
+                int bVotes = safeInt(bCell);
+
                 Map<String, Integer> pair = new HashMap<>();
-                pair.put("A", bbVotes);
-                pair.put("B", rrVotes);
+                pair.put("A", aVotes);
+                pair.put("B", bVotes);
                 voteResults.put(stateId, pair);
             }
         }
         System.out.println("Loaded " + voteResults.size() + " state vote results.");
+    }
+
+    private static int safeInt(Cell c) {
+        try {
+            if (c == null) return 0;
+            if (c.getCellType() == CellType.NUMERIC) return (int) c.getNumericCellValue();
+            if (c.getCellType() == CellType.STRING)  return Integer.parseInt(c.getStringCellValue().trim());
+        } catch (Exception ignore) {}
+        return 0;
     }
 
     // ----------------------------- CALCULATIONS -----------------------------
@@ -207,19 +231,19 @@ public class TheVizzard {
         System.out.println("\n========== STATE PERCENTAGES ==========");
         for (String state : percentages.keySet()) {
             Map<String, Double> pct = percentages.get(state);
-            System.out.printf("%s: Candidate A %.2f%% | Candidate B %.2f%%%n",
-                    state, pct.get("A"), pct.get("B"));
+            System.out.printf("%s: %s %.2f%% | %s %.2f%%%n",
+                    state, candidateA, pct.get("A"), candidateB, pct.get("B"));
         }
     }
 
     private static void printPopularVoteResults(int[] totals) {
         System.out.println("\n========== POPULAR VOTE ==========");
-        System.out.println("Candidate A Total Votes: " + totals[0]);
-        System.out.println("Candidate B Total Votes: " + totals[1]);
+        System.out.println(candidateA + " Total Votes: " + totals[0]);
+        System.out.println(candidateB + " Total Votes: " + totals[1]);
         if (totals[0] > totals[1])
-            System.out.println("Popular Vote Winner: Candidate A");
+            System.out.println("Popular Vote Winner: " + candidateA);
         else if (totals[1] > totals[0])
-            System.out.println("Popular Vote Winner: Candidate B");
+            System.out.println("Popular Vote Winner: " + candidateB);
         else
             System.out.println("Popular Vote Result: Tie");
     }
@@ -228,14 +252,14 @@ public class TheVizzard {
         System.out.println("\n========== ELECTION SUMMARY ==========");
         System.out.println("Candidate     | Popular Votes | Electoral Votes");
         System.out.println("---------------------------------------------");
-        System.out.printf("Candidate A   | %13d | %14d%n", popularTotals[0], evTotals[0]);
-        System.out.printf("Candidate B   | %13d | %14d%n", popularTotals[1], evTotals[1]);
+        System.out.printf("%-14s | %13d | %14d%n", candidateA, popularTotals[0], evTotals[0]);
+        System.out.printf("%-14s | %13d | %14d%n", candidateB, popularTotals[1], evTotals[1]);
         System.out.println("---------------------------------------------");
 
         if (evTotals[0] > evTotals[1])
-            System.out.println("Winner: Candidate A");
+            System.out.println("Winner:" + candidateA);
         else if (evTotals[1] > evTotals[0])
-            System.out.println("Winner: Candidate B");
+            System.out.println("Winner:" + candidateB);
         else
             System.out.println("Result: Tie");
     }
@@ -249,14 +273,14 @@ public class TheVizzard {
         int total = votes.get("A") + votes.get("B");
         double aPct = (votes.get("A") * 100.0) / total;
         double bPct = (votes.get("B") * 100.0) / total;
-        String winner = votes.get("A") > votes.get("B") ? "Candidate A"
-                : votes.get("B") > votes.get("A") ? "Candidate B" : "Tie";
+        String winner = votes.get("A") > votes.get("B") ? candidateA :
+                        votes.get("B") > votes.get("A") ? candidateB : "Tie";
         int ev = electoralVotes.getOrDefault(state, 0);
 
         System.out.println("\nSummary for " + state);
         System.out.println("Total Votes: " + total);
-        System.out.printf("Candidate A: %d (%.2f%%)%n", votes.get("A"), aPct);
-        System.out.printf("Candidate B: %d (%.2f%%)%n", votes.get("B"), bPct);
+        System.out.printf("%s: %d (%.2f%%)%n", candidateA, votes.get("A"), aPct);
+        System.out.printf("%s: %d (%.2f%%)%n", candidateB, votes.get("B"), bPct);
         System.out.println("Winner: " + winner);
         System.out.println("Electoral Votes: " + ev);
     }
@@ -275,29 +299,29 @@ public class TheVizzard {
         List<String> sortedStates = new ArrayList<>(voteResults.keySet());
         Collections.sort(sortedStates);
         int totalStates = sortedStates.size();
-        int statesReported = (int) ((hour / 24.0) * totalStates);
+        int statesReported = (int) Math.floor((hour / 24.0) * totalStates);
 
         int partialA = 0, partialB = 0, partialAEV = 0, partialBEV = 0;
         for (int i = 0; i < statesReported; i++) {
-            String state = sortedStates.get(i);
-            Map<String, Integer> votes = voteResults.get(state);
+            String st = sortedStates.get(i);
+            Map<String, Integer> votes = voteResults.get(st);
             partialA += votes.get("A");
             partialB += votes.get("B");
             if (votes.get("A") > votes.get("B"))
-                partialAEV += electoralVotes.getOrDefault(state, 0);
+                partialAEV += electoralVotes.getOrDefault(st, 0);
             else if (votes.get("B") > votes.get("A"))
-                partialBEV += electoralVotes.getOrDefault(state, 0);
+                partialBEV += electoralVotes.getOrDefault(st, 0);
         }
 
-        double reportedPct = (statesReported * 100.0) / totalStates;
+        double reportedPct = totalStates == 0 ? 0.0 : (statesReported * 100.0) / totalStates;
 
         System.out.println("\n========== PARTIAL RESULTS ==========");
         System.out.printf("Reporting Time: %02d:00 (%d/%d states, %.1f%%)%n",
                 hour, statesReported, totalStates, reportedPct);
-        System.out.println("Candidate A Partial Votes: " + partialA);
-        System.out.println("Candidate B Partial Votes: " + partialB);
-        System.out.println("Candidate A Partial EV: " + partialAEV);
-        System.out.println("Candidate B Partial EV: " + partialBEV);
+        System.out.println(candidateA + " Partial Votes: " + partialA);
+        System.out.println(candidateB + " Partial Votes: " + partialB);
+        System.out.println(candidateA + " Partial EV: " + partialAEV);
+        System.out.println(candidateB + " Partial EV: " + partialBEV);
     }
 
     // ----------------------------- VISUALIZATION -----------------------------
@@ -312,17 +336,16 @@ public class TheVizzard {
                 int baseY = getHeight() - 60;
                 int barWidth = 150;
                 int maxVotes = Math.max(popular[0] + ev[0], popular[1] + ev[1]);
+                if (maxVotes <= 0) return;
 
                 g.setFont(new Font("SansSerif", Font.BOLD, 14));
-                g.drawString("Candidate A (Green)", 80, 30);
-                g.drawString("Candidate B (Magenta)", 320, 30);
+                g.drawString(candidateA + " (Green)", 80, 30);
+                g.drawString(candidateB + " (Magenta)", 320, 30);
 
-                // Bar for Candidate A
                 int heightA = (int) ((popular[0] / (double) maxVotes) * 200);
                 g.setColor(Color.GREEN);
                 g.fillRect(100, baseY - heightA, barWidth, heightA);
 
-                // Bar for Candidate B
                 int heightB = (int) ((popular[1] / (double) maxVotes) * 200);
                 g.setColor(Color.MAGENTA);
                 g.fillRect(350, baseY - heightB, barWidth, heightB);

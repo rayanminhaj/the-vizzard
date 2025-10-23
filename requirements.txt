@@ -1,3 +1,18 @@
-Java 17 or higher
-Apache POI (for Excel reading)
-JFreeChart (for optional visualization)
+The Vizzard - Java Dependencies
+
+This project uses the following external libraries:
+1. Apache POI 5.4.1 — for reading Excel files (.xlsx)
+2. Log4j 2.x — required by Apache POI for logging
+3. Swing (built-in Java library) — for visualization
+4. AWT (built-in Java library) — for rendering charts and UI
+5. CSV Reader (java.io + BufferedReader) — for reading CSV files
+
+All external JARs are stored in the /lib directory:
+- poi-5.4.1.jar
+- poi-ooxml-5.4.1.jar
+- poi-ooxml-full-5.4.1.jar
+- commons-collections4-4.4.jar
+- log4j-api-2.17.1.jar
+- log4j-core-2.17.1.jar
+- xmlbeans-5.1.1.jar
+- curvesapi-1.07.jar
