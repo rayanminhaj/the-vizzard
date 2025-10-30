@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="https://github.com/rayanminhaj/the-vizzard/blob/main/the_vizzard_preview.png" alt="The Vizzard Preview" width="800"/>
+</p>
+
+
 # The Vizzard — Election Analyzer
 
 The Vizzard is a **Java-based election analysis and visualization tool** that reads real-world voting data from Excel and CSV files, processes results, simulates live reporting and visualizes outcomes across states and counties.  
